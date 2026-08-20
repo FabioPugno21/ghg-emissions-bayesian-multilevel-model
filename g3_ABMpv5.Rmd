@@ -1,0 +1,555 @@
+---
+title: "Group project"
+subtitle: "Group Number 3"
+author: 
+  - "Sviatoslav Naumov"
+  - "Fuad Mahamed"
+  - "Fabio Pugno"
+  
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: readable
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    code_download: false
+---
+
+```{r setup, include = FALSE}
+options(max.print= 120,
+        width = 90,
+        tibble.width = 80)
+knitr::opts_chunk$set(echo= TRUE,
+                      cache=FALSE,
+                      prompt=FALSE,
+                      tidy="styler",
+                      comment=NA,
+                      message=FALSE,
+                      warning=TRUE)
+
+knitr::opts_knit$set(width=90)
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+set.seed(42)
+```
+
+# Checklist {-}
+
+The submission includes the following.
+
+- [ ] RMD document where it's clear what is the code that corresponds to each question.
+- [ ] Link to the dataset
+- [ ] html/PDF document with the following
+    - [ ] Numbered questions and answers with text and all the necessary code.
+    - [ ] Subtitle indicates the group number
+    - [ ] Name of all group members
+    - [ ] Details of specification of the work done by group members (e.g., who found the data, who did the pre-processing, who answered which questions, etc).
+    - [ ] Statement of technology (see template below): which AI tools you used, for which questions, and for what kind of help.
+
+# Important — read before you start {-}
+
+- **Assignments that do not follow this template will not be graded.** Use the structure, the question numbering, and the order given here.
+- **Each question has a maximum word count.** Code, plots, and tables don't count toward the limit, but explanations, justifications, and conclusions do. Anything beyond the limit will not be read. Be focused — do not pad your answers.
+- **Answer only what is asked.** Do not add extra models, extra plots, extra metrics, or side analyses that the question does not request. Points will be deducted from any question that includes irrelevant content, even if that content is correct.
+
+# Group project {-}
+
+For the project, we use the following packages:
+
+```{r, message = FALSE}
+## ...
+library(dplyr)
+library(brms)
+library(ggplot2)
+library(tidyr)
+library(bayesplot)
+library(priorsense)
+library(patchwork)
+library(loo)
+library(matrixStats)
+```
+
+## 1. Dataset Selection (0.5pt)
+Slava
+Select a dataset with clusters such as schools, regions, or people with multiple observations per individual (e.g., from https://www.kaggle.com/). Choose a small dataset (e.g., fewer than 1000 rows) or subset it so that fitting the models doesn't take too long.
+
+a. Describe the dataset with a couple of short sentences. What was its intended use? Are there papers that reference it? Provide information on how to obtain the dataset, including its source and any necessary preprocessing steps/feature engineering. *(Max 200 words.)*
+
+<!-- DESCRIBE IT BELOW -->
+
+The data represents CO2 emissions of 100 largest global companies from 2022 to 2024. The major cluster variables are sectors, countries and companies. 
+
+The data can be found on Kaggle: https://www.kaggle.com/datasets/hussnainmamoon1/ghg-emissions-and-finance-global-companies-2022-2024?resource=download
+The data is already clean. 
+Major data sources used by the contributors included companies' annual reports, and financial data portals. To the best of authors knowledge, this particular dataset has not been referenced by any research. 
+
+```{r}
+ghg_all <- read.csv("ghg_financial_global_2022_2024_clean.csv")
+ghg_df <- select(ghg_all,c('company_name','country', 'sector', 'year', 'scope1_co2e_tonnes','revenue_usd_m','country_renewable_energy_pct'))
+```
+
+
+```{r}
+ghg_df$country <- as.factor(ghg_df$country)
+ghg_df$sector <- as.factor(ghg_df$sector)
+ghg_df$co2_mt <- round(ghg_df$scope1_co2e_tonnes/1000000,2)
+ghg_df$revenue_b <- round(ghg_df$revenue_usd_m/1000,2)
+
+```
+
+b. Report the number of observations, columns (with their meaning) and their data types. Indicate clearly what you will use as dependent variable/label. *(Max 150 words; a short table of columns is fine and does not count toward the limit.)*
+
+There are 300 rows (observations).
+
+The dependent variable is co2_mt: direct company's CO2-equivalent greenhouse gas emissions (in million tonnes) per year. 
+- co2_mt — Scope 1 CO2e emissions in million tonnes (dependent variable); numeric
+
+We are trying to predict the co2 variable based on the following factors:
+- year — year of observation, 2022–2024; integer (treated as a factor in m3)
+- revenue_b — company revenue in billion USD; numeric
+- sector — economic sector; factor
+- country — country of headquarters; factor
+- country_renewable_energy_pct — % renewable energy in the country; numeric
+
+```{r}
+summary(ghg_df)
+```
+
+<!-- REPORT IT BELOW -->
+
+
+## 2. Model Exploration (3.5pt)
+
+First split the data into training (80%) and test set (20%). Transform the columns if necessary.
+
+```{r}
+set.seed(123)
+ghg_train <- slice_sample(ghg_df, prop = .8)
+ghg_test  <- anti_join(ghg_df, ghg_train, by = colnames(ghg_df))
+```
+
+a. Fit multiple appropriate models to the dataset: **as many models as there are members in the group, with a minimum of two**. Models must differ in a substantive way — **at least one must be a multilevel model**; differences can be in the multilevel structure, in the likelihood/data model, or in the informativeness of the priors (trivial prior tweaks do not count as a different model). I recommend against no-pooling models, as they tend to take a long time and it is hard to assign good priors. **Assess whether each model converged: report what the traceplots look like, the highest Rhat, the number of effective samples, etc. If a model did not converge, address the issues. If you cannot solve the problems, report them and continue with the assignment.**
+
+b. Explain each model and describe its structure (what it assumes about population-level and group-level effects) and the priors used. *(Max 150 words per model.)*
+
+<!-- message = FALSE, results = "hide" prevents displaying output, if you need to show something create another chunk of code -->
+
+```{r, message = FALSE, results = "hide"}
+# model 1 go here
+m1 <- brm(co2_mt ~ country_renewable_energy_pct + revenue_b + (1|sector),
+          data = ghg_train,family = gaussian(),seed = 123)
+
+m2 <- brm(co2_mt ~ country_renewable_energy_pct + revenue_b +
+    (1 | sector) + (1 | country),
+  data = ghg_train,
+  family = gaussian(),
+  seed = 123,
+  control = list(adapt_delta = 0.99)
+)
+
+ghg_train$year <- factor(ghg_train$year)
+
+m3 <- brm(
+  co2_mt ~ year + country_renewable_energy_pct + revenue_b +
+    (1 | sector),
+  data = ghg_train,
+  family = gaussian(),
+  seed = 123
+)
+```
+
+
+```{r}
+summary(m1)
+```
+
+```{r}
+summary(m2)
+```
+
+```{r}
+summary(m3)
+```
+
+
+```{r}
+plot(m1)
+
+```
+
+```{r}
+plot(m2)
+```
+
+```{r}
+plot(m3)
+```
+
+
+m1:
+M1 model converged well, as can be seen from 1.00 Rhat for all the variables. The same can be said after looking at trace plots for each variable, all four chains seem to mix well.
+The Bulk ESS for the intercepts was below 1000 (warning), which is common in multilevel models with few groups, due to posterior correlation between the global intercept and the group-level deviations. All Tail ESS were above 1000, so the tails (5th/95th percentiles) are estimated reliably.
+
+m2:
+M2 also converged well. The highest Rhat value was 1.01 for the country-level standard deviation, while all other parameters had Rhat values of 1.00. Bulk ESS values ranged from 962 to 4144 and Tail ESS values ranged from 1696 to 2737. The traceplots showed good mixing and overlap between the four chains, indicating good enough convergence.
+
+m3:
+M3 converged well. The highest Rhat value was 1.01 for the intercept, while all remaining parameters had Rhat values of 1.00. Bulk ESS values ranged from 1013 to 3293 and Tail ESS values ranged from 1624 to 2817. The traceplots showed good mixing and no visible patterns or separation between chains. Overall, the convergence diagnostics indicate reliable posterior sampling.
+
+<!-- explanation of model 1 -->
+m1: 
+m1 is starting point model, so it used default (brms) priors, which would be examined later
+The model had varying intercept by sector (assuming that there is a group-level variance by sector), with revenue and a country's usage of renewable energy as independent variables (which are assumed to be population-level effects and not to vary by group (sector)). 
+
+m2:
+m2 extends m1 by adding a varying intercept for country alongside sector. 
+The model assumes that there is a group lever variance both between sectors and countries.Revenue and a country's usage of renewable energy remain independent variables and are assumed to be population-level effects that do not vary by sector or country.
+
+m3:
+m3 extends m1 by adding year as an additional independent variable.
+The model still has a varying intercept by sector, assuming that there is group-level variance between sectors. Revenue, country renewable energy percentage, and year are treated as population-level effects and are assumed not to vary by sector.
+
+## 3. Model checking (3pt)
+
+a. Perform a prior sensitivity analysis for each model and modify the model if appropriate. Justify your decision (whether you kept the model as-is or modified it). *(Max 150 words per model.)*
+
+```{r}
+powerscale_sensitivity(m1)
+powerscale_sensitivity(m2)
+powerscale_sensitivity(m3)
+
+```
+<!-- EXPLAIN CONCLUSIONS AND WHETHER MODELS ARE KEPT OR MODIFIED  -->
+m1:
+
+The power-scaling diagnostic flags many parameters as "strong prior / weak likelihood", plus a prior-data conflict on the global intercept. Since the brms defaults are actually flat and weakly informative, the flag does not reflect genuinely strong priors; rather, the likelihood is weak for the sector intercepts (few firms per sector) and is distorted by a small number of extreme emission values. Because we still want to predict emissions on their natural scale (not log-emissions), we address this by switching from a Gaussian to a lognormal likelihood, which is appropriate for strictly positive, right-skewed data, and by setting weakly-informative priors. We therefore modify m1 into m1_ln.
+
+m2 & m3:
+
+The same diagnostic pattern appears for m2 and m3 (several "strong prior / weak likelihood" flags and some prior-data conflict, e.g. on sigma and the country sd). We apply the same modification for consistency, lognormal likelihood with the same weakly-informative priors, so that the three models differ only in their multilevel structure and remain directly comparable, rather than differing in likelihood or priors. This yields m2_ln and m3_ln.
+
+```{r, message = FALSE, results = "hide"}
+priors_ln <- c(
+  prior(normal(0, 0.5), class = "b", coef = "country_renewable_energy_pct"),
+  prior(normal(0, 0.1), class = "b", coef = "revenue_b"),
+  prior(normal(1.5, 1), class = "Intercept"),
+  prior(exponential(1), class = "sd"),
+  prior(exponential(1), class = "sigma")
+)
+
+m1_ln <- brm(co2_mt ~ country_renewable_energy_pct + revenue_b + (1 | sector),
+             data = ghg_train, family = lognormal(),
+             prior = priors_ln, seed = 123)
+
+m2_ln <- brm(co2_mt ~ country_renewable_energy_pct + revenue_b + (1 | sector) + 
+  (1 | country),
+  data = ghg_train,
+  family = lognormal(),
+  prior = priors_ln,
+  seed = 123,
+  control = list(adapt_delta = 0.99)
+)
+  
+m3_ln <- brm(co2_mt ~ year + country_renewable_energy_pct + revenue_b +
+  (1 | sector),
+  data = ghg_train,
+  family = lognormal(),
+  prior = priors_ln,
+  seed = 123
+)
+```
+
+```{r}
+summary(m1_ln)
+
+```
+
+
+```{r}
+summary(m2_ln)
+
+```
+
+
+```{r}
+summary(m3_ln)
+
+```
+
+
+```{r}
+powerscale_sensitivity(m1_ln)
+powerscale_sensitivity(m2_ln)
+powerscale_sensitivity(m3_ln)
+```
+m1_ln:
+
+After switching to the lognormal likelihood, the power-scaling diagnostic improves markedly: only one parameter (the sector intercept sd) is flagged as "strong prior / weak likelihood", against many flags in the Gaussian m1. This residual flag is expected, since with 11 sectors the data weakly inform the group-level sd. We judge the model robust enough and keep m1_ln as is.
+
+m2_ln:
+
+m2_ln shows two residual flags — a prior-data conflict on the country intercept sd and a "strong prior / weak likelihood" on sigma, but is far less prior-sensitive than the Gaussian m2. These flags concern variance parameters, which are inherently weakly identified with few groups (19 countries, some with very few firms), and do not affect the population-level coefficients. We keep m2_ln as is.
+
+m3_ln:
+
+m3_ln behaves like m1_ln: only the sector intercept sd and sigma are flagged as "strong prior / weak likelihood", again on variance parameters. Overall the lognormal models are robust to reasonable prior scaling, so no further changes are made. We keep m3_ln as is.
+
+
+b. Conduct posterior predictive checks for each model to assess how well they fit the data. Explain what you conclude. *(Max 150 words per model.)*
+
+```{r}
+# posterior predictive check for m1
+yrep_h0 <- posterior_predict(m1, ndraws = 800)
+
+p1 <- bayesplot::ppc_stat_2d(ghg_train$co2_mt, yrep_h0) +
+  theme(legend.position = "bottom")
+p2 <- bayesplot::ppc_intervals(ghg_train$co2_mt, yrep_h0,
+                               x = c(ghg_train$revenue_b)) +
+  theme(legend.position = "bottom") + xlab("Revenue")
+p3 <- bayesplot::ppc_dens_overlay(ghg_train$co2_mt, yrep_h0[1:50, ]) +
+  theme(legend.position = "bottom")
+p1 + p2 + p3
+
+# posterior predictive check for m2
+yrep_m2 <- posterior_predict(m2, ndraws = 800)
+
+p1_m2 <- bayesplot::ppc_stat_2d(ghg_train$co2_mt, yrep_m2) +
+  theme(legend.position = "bottom")
+
+p2_m2 <- bayesplot::ppc_intervals(ghg_train$co2_mt,yrep_m2,x = ghg_train$revenue_b) +
+  theme(legend.position = "bottom") +
+  xlab("Revenue")
+
+p3_m2 <- bayesplot::ppc_dens_overlay(ghg_train$co2_mt,yrep_m2[1:50, ]) +
+  theme(legend.position = "bottom")
+
+p1_m2 + p2_m2 + p3_m2
+
+
+# posterior predictive check for m3
+yrep_m3 <- posterior_predict(m3, ndraws = 800)
+
+p1_m3 <- bayesplot::ppc_stat_2d(ghg_train$co2_mt, yrep_m3) +
+  theme(legend.position = "bottom")
+
+p2_m3 <- bayesplot::ppc_intervals(ghg_train$co2_mt,yrep_m3,x = ghg_train$revenue_b) +
+  theme(legend.position = "bottom") +
+  xlab("Revenue")
+
+p3_m3 <- bayesplot::ppc_dens_overlay(ghg_train$co2_mt,yrep_m3[1:50, ]) +
+  theme(legend.position = "bottom")
+
+p1_m3 + p2_m3 + p3_m3
+```
+
+
+```{r}
+# posterior predictive check for m1_ln
+yrep_h0 <- posterior_predict(m1_ln, ndraws = 800)
+
+p1_m1_ln <- bayesplot::ppc_stat_2d(ghg_train$co2_mt, yrep_h0) +
+  theme(legend.position = "bottom")
+p2_m1_ln <- bayesplot::ppc_intervals(ghg_train$co2_mt, yrep_h0,
+                               x = c(ghg_train$revenue_b)) +
+  theme(legend.position = "bottom") + xlab("Revenue")
+p3_m1_ln <- bayesplot::ppc_dens_overlay(ghg_train$co2_mt, yrep_h0[1:50, ]) +
+  theme(legend.position = "bottom")
+p1_m1_ln + p2_m1_ln + p3_m1_ln
+
+# posterior predictive check for m2_ln
+yrep_h0 <- posterior_predict(m2_ln, ndraws = 800)
+
+p1_m1_ln <- bayesplot::ppc_stat_2d(ghg_train$co2_mt, yrep_h0) +
+  theme(legend.position = "bottom")
+p2_m1_ln <- bayesplot::ppc_intervals(ghg_train$co2_mt, yrep_h0,
+                               x = c(ghg_train$revenue_b)) +
+  theme(legend.position = "bottom") + xlab("Revenue")
+p3_m1_ln <- bayesplot::ppc_dens_overlay(ghg_train$co2_mt, yrep_h0[1:50, ]) +
+  theme(legend.position = "bottom")
+p1_m1_ln + p2_m1_ln + p3_m1_ln
+
+
+
+# posterior predictive check for m3_ln
+yrep_h0 <- posterior_predict(m3_ln, ndraws = 800)
+
+p1_m1_ln <- bayesplot::ppc_stat_2d(ghg_train$co2_mt, yrep_h0) +
+  theme(legend.position = "bottom")
+p2_m1_ln <- bayesplot::ppc_intervals(ghg_train$co2_mt, yrep_h0,
+                               x = c(ghg_train$revenue_b)) +
+  theme(legend.position = "bottom") + xlab("Revenue")
+p3_m1_ln <- bayesplot::ppc_dens_overlay(ghg_train$co2_mt, yrep_h0[1:50, ]) +
+  theme(legend.position = "bottom")
+p1_m1_ln + p2_m1_ln + p3_m1_ln
+```
+
+Gaussian models (m1, m2, m3). All three Gaussian models reproduce the observed mean and sd of CO2 emissions reasonably well, but they fail on the shape of the distribution. The density overlays do not capture the strong right skew, and the predictive intervals extend below zero — impossible for emissions — while still missing several observed points, especially the largest emitters. Adding country (m2) or year (m3) does not fix this, since the misfit comes from the symmetric, unbounded Gaussian likelihood rather than from the predictors. A leave-one-out check we ran while exploring the models pointed the same way, with the Gaussian models scoring well below their lognormal counterparts (a gap of more than 440 ELPD). We therefore base our analysis on the lognormal models, which are designed for positive, right-skewed data.
+
+m1_ln (sector only). 
+The mean/sd statistic of the replications brackets the observed value well, and the density overlay reproduces the strong right skew of the data, with predictions staying positive. The predictive intervals cover the observed points but are wide in the upper tail, reflecting the heavy right tail of the lognormal for high-revenue firms.
+
+m2_ln (sector + country). 
+Fit on the central statistics and the density shape is very similar to m1_ln. The country-level intercept slightly widens the upper-tail intervals, since a few countries with very few firms are weakly identified, but coverage of the observed data remains good and predictions stay on the positive scale.
+
+m3_ln (sector + year). 
+Essentially indistinguishable from m1_ln in shape and coverage, consistent with the very small year coefficients: adding year does not change the predictive distribution. The mean/sd statistic and the density overlay are reproduced as well as in the other two models.
+
+All three lognormal models capture the positive support and right skew of CO2 emissions far better than the Gaussian alternatives, with observed mean and sd well within the replicated values. The main shared limitation is wide predictive intervals in the upper tail, driven by the largest emitters.
+<!-- EXPLAIN CONCLUSIONS -->
+
+## 4. Model Comparison (1.5pt)
+Fabio
+a. Use k-fold cross-validation to compare the models using the log-score. State the value of k you used and briefly justify it.
+
+```{r}
+# K = 10: with 300 rows it's the standard bias/variance compromise;
+
+# Safety: m3_ln uses year as a factor — make sure both sets agree.
+ghg_train$year <- factor(ghg_train$year)
+ghg_test$year  <- factor(ghg_test$year, levels = levels(ghg_train$year))
+
+set.seed(123)
+K <- 10
+folds <- loo::kfold_split_random(K = K, N = nrow(ghg_train))
+
+kf_m1_ln <- kfold(m1_ln, folds = folds)
+kf_m2_ln <- kfold(m2_ln, folds = folds)
+kf_m3_ln <- kfold(m3_ln, folds = folds)
+
+loo_compare(kf_m1_ln, kf_m2_ln, kf_m3_ln)
+```
+We use k = 10. With 240 training observations, 10-fold cross-validation is the standard bias–variance compromise: each fold leaves out enough data (~24 observations) for a reliable out-of-sample estimate, while refitting only 10 times per model keeps the computation feasible.
+
+b. Determine the best model based on predictive accuracy and justify your decision. *(Max 100 words.)*
+
+<!-- DECISION -->
+Using 10-fold cross-validation, m2_ln has the highest ELPD. Following the rule Δelpd > 4 and Δ > 2 SE for a reliable difference: m2_ln beats m1_ln by 36.8 (SE 14.0; 2 SE = 28.0) and m3_ln by 38.8 (SE 13.9; 2 SE = 27.8). Both gaps clear the 4-point and the 2 SE thresholds, so m2_ln is reliably better. Substantively, m2_ln is the only model with a country-level varying intercept, capturing between-country variation in emissions (energy mix, regulation). Adding year (m3_ln) does not help. We select m2_ln.
+
+c. Report the **log-score on the held-out test set** for the best model. Make sure the test set is scaled/encoded with statistics from the training set (no data leakage). Briefly compare with the cross-validated estimate. *(Max 100 words.)*
+
+```{r}
+
+# Pointwise log predictive density on the test set
+ll_test <- log_lik(
+  m2_ln,
+  newdata = ghg_test,
+  allow_new_levels = TRUE
+)  # draws x n_test matrix
+
+# Test log-score = sum over test points of log( mean over draws of likelihood )
+elpd_test_pointwise <- apply(ll_test, 2, function(col) {
+  matrixStats::logSumExp(col) - log(length(col))
+})
+elpd_test <- sum(elpd_test_pointwise)
+n_test    <- ncol(ll_test)
+
+# Report total and per-observation, to compare fairly with k-fold
+elpd_test                       # total test log-score
+elpd_test / n_test              # per-observation test log-score
+
+# k-fold estimate for the same model, on a per-observation basis
+kf_m2_ln$estimates["elpd_kfold", "Estimate"] / nrow(ghg_train)
+```
+
+We fit m2_ln on the training set only and evaluated its log predictive density on the held-out test set (n = 60). No scaling statistics are carried over because the predictors are used in raw units, so there is no leakage; the only training-derived encoding is the set of sector/country factor levels, handled with allow_new_levels = TRUE. The total test log-score was −157.77, i.e. −2.63 per observation. This is very close to the cross-validated estimate of −2.51 per observation (only 0.12 lower), indicating that m2_ln generalizes well, with the small gap consistent with a few large emitters being influential on a small test set.
+
+## 5. Interpretation of Important Parameters (1.5pt)
+Fabio
+Take the best model from question 4 and interpret its most important parameters — focus on the parameters that matter for the research question or the intended use of the dataset (mentioned in question 1). *(Max 250 words.)*
+
+<!-- INTERPRETATION AND CODE GOES HERE -->
+```{r}
+summary(m2_ln)
+fixef(m2_ln, probs = c(0.025, 0.975))["revenue_b", ]
+```
+The best model (m2_ln) predicts company-level Scope 1 emissions from revenue and national renewable-energy share, with varying intercepts for sector and country. Because the likelihood is lognormal, coefficients act multiplicatively on emissions through exp(·).
+Renewable-energy share has a coefficient of −0.01 (95% CI [−0.04, 0.01]): the interval spans zero, so once sector and country are accounted for, national renewable use shows no clear association with a company's emissions. Revenue has a small but credibly positive effect (0.0047, 95% CI [0.0029, 0.0065], excluding zero): on the log scale each additional billion USD multiplies expected emissions by about exp(0.0047) ≈ 1.005, under 0.5%. Within a given sector and country, firm revenue therefore adds little.
+The substantive story lies in the grouping structure. The sector standard deviation is 2.40 (CI [1.66, 3.61]) and the country standard deviation is 1.43 (CI [0.93, 2.12]). Exponentiating, typical emissions vary by roughly a factor of 11 across sectors and a factor of 4 across countries, sector being clearly the dominant source of variation. Decomposing the variance on the log scale (2.40² + 1.43² + 0.95²) attributes about 66% to sector, 23% to country, and only 10% to residual within-group variation.
+The key message: a company's emissions are driven overwhelmingly by what it does (sector) and where it operates (country), far more than by its revenue or its country's renewable mix. This justifies the multilevel structure and explains why adding the country level (m2_ln) outperformed the alternatives.
+
+## 6. Report a loss function with cross-validation (Optional bonus, 0.5 to 1pt, depending on whether you use RMSE or another function).
+Fabio
+a. Report RMSE or another loss (or utility) function, computed with k-fold cross-validation. Do you reach the same conclusion as in question 4 (model comparison)? *(Max 100 words.)*
+
+```{r}
+set.seed(123)
+K <- 10
+folds <- loo::kfold_split_random(K = K, N = nrow(ghg_train))
+
+kf_m1_ln_f <- kfold(m1_ln, folds = folds, save_fits = TRUE)
+kf_m2_ln_f <- kfold(m2_ln, folds = folds, save_fits = TRUE)
+kf_m3_ln_f <- kfold(m3_ln, folds = folds, save_fits = TRUE)
+
+# Out-of-sample RMSE on the original (Mt) scale
+kfold_rmse <- function(kf, data, yname = "co2_mt") {
+  obs  <- data[[yname]]
+  yhat <- rep(NA_real_, nrow(data))
+  for (k in seq_len(nrow(kf$fits))) {
+    fit_k   <- kf$fits[[k, "fit"]]
+    omitted <- kf$fits[[k, "omitted"]]
+    pred    <- posterior_epred(fit_k, newdata = data[omitted, , drop = FALSE],
+                               allow_new_levels = TRUE)
+    yhat[omitted] <- colMeans(pred)
+  }
+  sqrt(mean((obs - yhat)^2))
+}
+
+rmse_m1_ln <- kfold_rmse(kf_m1_ln_f, ghg_train)
+rmse_m2_ln <- kfold_rmse(kf_m2_ln_f, ghg_train)
+rmse_m3_ln <- kfold_rmse(kf_m3_ln_f, ghg_train)
+
+c(m1_ln = rmse_m1_ln, m2_ln = rmse_m2_ln, m3_ln = rmse_m3_ln)
+```
+Using the same 10-fold partition as in Q4, we computed RMSE on the original (Mt) scale from the held-out posterior expected predictions: m1_ln ≈ 31.8, m3_ln ≈ 32.3, and m2_ln ≈ 94.6. This does not match Q4: under the log-score m2_ln was the best model, but under RMSE it is clearly the worst. The reason is structural — m2_ln's country-level varying intercept is poorly identified for countries with only three observations (e.g. Mexico, Australia, Spain), producing a few extreme predictions that dominate squared-error loss. The log-score weights the entire predictive density and is far less affected by these few cases.
+
+b. Report the same metric on the **held-out test set** for the best model from question 4. Again, scale/encode the test set with training-set statistics. *(Max 50 words.)*
+
+```{r}
+set.seed(123)
+pred_test <- posterior_epred(m1_ln, newdata = ghg_test,
+                             allow_new_levels = TRUE)
+yhat_test <- colMeans(pred_test)
+rmse_test <- sqrt(mean((ghg_test$co2_mt - yhat_test)^2))
+rmse_test
+```
+We use m1_ln (the RMSE-best model; m2_ln is unstable under squared error). Fit on training data only, predictors in raw units, sector levels from training. Held-out test RMSE was 38.0 Mt, close to the cross-validated ≈31.8 Mt — a modest gap, driven by a few large emitters in a small test set.
+
+# Contributions of each member 
+
+- Sviatoslav Naumov - data set finding, data exploration and manipulation, fitting and examining the first (base) model 
+- Fuad Mahamed - fitting and explaining models m2 and m3 (Q2); prior sensitivity analysis and likelihood modification to lognormal (Q3a); posterior predictive checks for all models (Q3b)
+- Fabio Pugno - model comparison via k-fold cross-validation with the log-score and held-out test-set evaluation (Q4); interpretation of the best model's parameters (Q5); RMSE loss via cross-validation and on the test set (Q6a, Q6b)
+
+# Statement of technology
+
+Disclose any AI tools (e.g., ChatGPT, Claude, Copilot, Gemini) used while preparing this submission. Be specific — vague statements like "we used ChatGPT to help" are not acceptable.
+
+For each tool used, report:
+- Sviatoslav -
+- **Tool and version** (Claude Opus 4.8).
+- **Which questions / parts of the submission** it was used for Q3a priors and likelihood modification.
+- **What kind of help** it provided.
+    - Suggesting  priors and likelihood (and explaining issues with default)
+- **How you verified the output** I integrated its suggestions, and ran the code, then compared the models, while consulting with workbooks to examine the suggested priors.
+
+-Fuad -
+- **Tool and version:** Chatgpt, gpt 5.5
+- **Which questions / parts:** Model checking and exploration for m2 and m3 
+- **What kind of help:** what kind of variable i could use for m2 and m3, general reasoning of the output. 
+- **How you verified the output:** I ran all code myself, checked the all the post model info that you can gain. while at the same time looking at the workbooks. Working with my own reasoning and that of the ai, the conclusion is written.
+
+- Fabio -
+- **Tool and version:** Claude Opus 4.8
+- **Which questions / parts:** Q4, Q5, Q6 (and dataset-selection support in Q1).
+- **What kind of help:** debugging and improving my R/brms code for k-fold cross-validation, log-score and RMSE (including fixing a NaN error and switching from posterior_predict to posterior_epred for stable lognormal predictions); explaining the underlying concepts (the Δelpd > 4 and Δ > 2 SE rule, why log-score and RMSE can disagree, the multiplicative interpretation of lognormal coefficients); and drafting wording for the written answers.
+- **How you verified the output:** I ran all the code and checked every result, diagnosed the m2_ln RMSE anomaly by inspecting the worst-predicted observations, and cross-checked the comparison rule against the lecture slides before finalizing the answers.
+
+
+If no AI tools were used, state that explicitly.
+
+You are responsible for everything in this submission, including content produced with AI assistance. Undisclosed use of AI tools will be treated as academic misconduct.
+
+# References
+- GHG Emissions and Finance — Global Companies 2022–2024. Kaggle. https://www.kaggle.com/datasets/hussnainmamoon1/ghg-emissions-and-finance-global-companies-2022-2024
+<!-- Complete if necessary -->
+
